@@ -1,10 +1,9 @@
 package com.example.dumbsmartwatch;
 
 import androidx.appcompat.app.AppCompatActivity;
-
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.os.Bundle;
+
+import com.example.dumbsmartwatch.Models.Connect;
 
 public class Container extends AppCompatActivity {
 
@@ -15,6 +14,8 @@ public class Container extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        Connect.toWatch();
+
+
     }
 }

@@ -1,2 +1,4 @@
 include ':app'
 rootProject.name='Dumb Smart Watch'
+include ':ble'
+project(':ble').projectDir = file('./libs/Android-BLE-Library-master/ble')

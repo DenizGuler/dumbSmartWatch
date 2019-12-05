@@ -4,7 +4,6 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/Dumb Smart Watch.iml" filepath="$PROJECT_DIR$/Dumb Smart Watch.iml" />
       <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
-      <module fileurl="file://$PROJECT_DIR$/libs/Android-BLE-Library-master/ble/ble.iml" filepath="$PROJECT_DIR$/libs/Android-BLE-Library-master/ble/ble.iml" />
     </modules>
   </component>
 </project>

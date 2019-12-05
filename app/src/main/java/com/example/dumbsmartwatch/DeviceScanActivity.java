@@ -1,8 +1,11 @@
 package com.example.dumbsmartwatch;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 
 import android.Manifest;
+import android.annotation.TargetApi;
+import android.app.ActionBar;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.le.BluetoothLeScanner;
@@ -16,13 +19,16 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 
 public class DeviceScanActivity extends AppCompatActivity {
 
+    public static String MAC_ADDRESS;
     Button startScanButton;
     Button stopScanButton;
     Button backButton;
@@ -37,12 +43,14 @@ public class DeviceScanActivity extends AppCompatActivity {
     private final int SCAN_PERIOD = 5000;
     private static final int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_FINE_LOCATION = 1;
+    private static final int PERMISSION_REQUEST_FOREGROUND_SERVICE = 1;
 
     private ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            BluetoothDevice foundDev = result.getDevice();
-            textView.append("Found Name: " + foundDev.getName() + ", RSSI: " + result.getRssi() + "\n");
+            final BluetoothDevice foundDev = result.getDevice();
+            createDevBtn("" + foundDev.getName() + ", MAC ADDRESS: " + foundDev.getAddress(), foundDev);
+            textView.setText("Scanning for watch...");
         }
     };
 
@@ -54,7 +62,7 @@ public class DeviceScanActivity extends AppCompatActivity {
         adapter = BluetoothAdapter.getDefaultAdapter();
         scanner = adapter.getBluetoothLeScanner();
 
-        startScanButton = findViewById(R.id.startScanning);
+        startScanButton = findViewById(R.id.start_scanning);
         startScanButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -70,7 +78,7 @@ public class DeviceScanActivity extends AppCompatActivity {
                 finish();
             }
         });
-        textView = findViewById(R.id.textView);
+        textView = findViewById(R.id.text_view);
 
         if (adapter != null && !adapter.isEnabled()) {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
@@ -81,7 +89,7 @@ public class DeviceScanActivity extends AppCompatActivity {
             this.requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_FINE_LOCATION);
         }
 
-
+        checkForegroundPerm();
     }
 
     private void scanForWatch() {
@@ -120,6 +128,33 @@ public class DeviceScanActivity extends AppCompatActivity {
     private void stopScan() {
         scanner.stopScan(scanCallback);
         startScanButton.setText("Scan");
-        textView.append("~~~Done Scanning~~~\n");
+        textView.setText("~~~Done Scanning~~~\n");
+    }
+
+    private void createDevBtn(String name, final BluetoothDevice foundDev) {
+        Button devBtn = new Button(this);
+        LinearLayout layout = findViewById(R.id.button_container);
+        devBtn.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        devBtn.setText(name);
+        devBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startConnectFS(foundDev);
+            }
+        });
+        layout.addView(devBtn);
+    }
+
+    private void startConnectFS(BluetoothDevice watch) {
+        MAC_ADDRESS = watch.getAddress();
+        Intent intent = new Intent(this, BleService.class);
+        startForegroundService(intent);
+    }
+
+    @TargetApi(28)
+    private void checkForegroundPerm() {
+        if (this.checkSelfPermission(Manifest.permission.FOREGROUND_SERVICE) != PackageManager.PERMISSION_GRANTED) {
+            this.requestPermissions(new String[]{Manifest.permission.FOREGROUND_SERVICE}, PERMISSION_REQUEST_FOREGROUND_SERVICE);
+        }
     }
 }

@@ -18,6 +18,7 @@ import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -25,10 +26,14 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 
 public class DeviceScanActivity extends AppCompatActivity {
 
     public static String MAC_ADDRESS;
+    private static final String TAG = "DeviceScan";
+    HashSet<String> foundMacAddresses;
+
     Button startScanButton;
     Button stopScanButton;
     Button backButton;
@@ -48,9 +53,11 @@ public class DeviceScanActivity extends AppCompatActivity {
     private ScanCallback scanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            final BluetoothDevice foundDev = result.getDevice();
-            createDevBtn("" + foundDev.getName() + ", MAC ADDRESS: " + foundDev.getAddress(), foundDev);
             textView.setText("Scanning for watch...");
+            final BluetoothDevice foundDev = result.getDevice();
+            if(foundMacAddresses.add(foundDev.getAddress())) {
+                createDevBtn("" + foundDev.getName() + ", MAC ADDRESS: " + foundDev.getAddress(), foundDev);
+            }
         }
     };
 
@@ -93,6 +100,12 @@ public class DeviceScanActivity extends AppCompatActivity {
     }
 
     private void scanForWatch() {
+        // clean up last scan results
+        foundMacAddresses = new HashSet<>();
+        LinearLayout layout = findViewById(R.id.button_container);
+        layout.removeAllViews();
+
+        // set up scan
         ScanFilter.Builder builderSF = new ScanFilter.Builder();
         ScanSettings.Builder builderSS = new ScanSettings.Builder();
         builderSF.setDeviceName("DumbWatch");
@@ -121,6 +134,7 @@ public class DeviceScanActivity extends AppCompatActivity {
                 }
             }, SCAN_PERIOD);
         } else {
+            Log.e(TAG, "scanForWatch: Error While Scanning");
             textView.setText("Error While Scanning");
         }
     }
@@ -128,7 +142,7 @@ public class DeviceScanActivity extends AppCompatActivity {
     private void stopScan() {
         scanner.stopScan(scanCallback);
         startScanButton.setText("Scan");
-        textView.setText("~~~Done Scanning~~~\n");
+        textView.setText("Done Scanning");
     }
 
     private void createDevBtn(String name, final BluetoothDevice foundDev) {

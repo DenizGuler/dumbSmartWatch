@@ -22,6 +22,7 @@ import java.util.Queue;
 public class BleService extends Service {
 
     private final static String TAG = "BleService";
+    private static final int MAX_TRIES = 5;
     private int startId = 0;
     private final String CHANNEL_ID = "290M";
     final int SERVICE_ID = 290;
@@ -30,10 +31,12 @@ public class BleService extends Service {
 
     BluetoothDevice device;
     BluetoothAdapter adapter;
-    BluetoothGatt gatt;
+    public static BluetoothGatt gatt;
 
     private Queue<Runnable> commandQueue;
     private boolean commandQueueBusy;
+    private int nrTries;
+    private boolean isRetrying;
 
     Runnable discoverServicesRunnable;
     Handler bleHandler = new Handler();
@@ -45,6 +48,7 @@ public class BleService extends Service {
     }
 
     BluetoothGattCallback bluetoothGattCallback = new BluetoothGattCallback() {
+
         @Override
         public void onConnectionStateChange(final BluetoothGatt gatt, int status, int newState) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
@@ -152,5 +156,57 @@ public class BleService extends Service {
         }
         stopForeground(true);
         super.onDestroy();
+    }
+
+    private void nextCommand() {
+        // make sure the queue is not busy
+        if (commandQueueBusy) {
+            return;
+        }
+
+        if (gatt == null) {
+            Log.e(TAG, "nextCommand: ERROR: Gatt is null; clearing command queue");
+            commandQueue.clear();
+            commandQueueBusy = false;
+            return;
+        }
+
+        if (commandQueue.size() > 0 ) {
+            final Runnable bleCommand = commandQueue.peek();
+            commandQueueBusy = true;
+            nrTries = 0;
+
+            bleHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        bleCommand.run();
+                    } catch (Exception ex) {
+                        Log.e(TAG, "run: ", ex);
+                    }
+                }
+            });
+        }
+    }
+
+    private void completedCommand() {
+        commandQueueBusy = false;
+        isRetrying = false;
+        commandQueue.poll();
+        nextCommand();
+    }
+
+    private void retryCommand() {
+        commandQueueBusy = false;
+        Runnable currCommand = commandQueue.peek();
+        if (currCommand != null) {
+            if (nrTries >= MAX_TRIES) {
+                Log.v(TAG, "Maximum number of tries reached");
+                commandQueue.poll();
+            } else {
+                isRetrying = true;
+            }
+        }
+        nextCommand();
     }
 }

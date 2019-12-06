@@ -20,20 +20,24 @@ import android.content.pm.PackageManager;
 import android.nfc.Tag;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
     Button startDeviceScanButton;
+    Button settings;
+    Button disconnect;
+    LinearLayout menu;
 
     BluetoothDevice device;
     BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
     BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
-
 
 
     @Override
@@ -43,6 +47,8 @@ public class MainActivity extends AppCompatActivity {
 
         createNotificationChannel();
 
+        menu = findViewById(R.id.menu_layout);
+
         startDeviceScanButton = findViewById(R.id.SetUp);
         startDeviceScanButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -50,6 +56,40 @@ public class MainActivity extends AppCompatActivity {
                 openDeviceScan();
             }
         });
+
+        disconnect = findViewById(R.id.disconnect_button);
+        final Intent bleIntent = new Intent(this, BleService.class);
+        final Handler visHandler = new Handler();
+        disconnect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopService(bleIntent);
+                visHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateVisibility(BleService.CONNECTED);
+                    }
+                }, 500);
+            }
+        });
+
+        settings = findViewById(R.id.settings);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateVisibility(BleService.CONNECTED);
+    }
+
+    public void updateVisibility(boolean vis) {
+        if (vis) {
+            menu.setVisibility(View.VISIBLE);
+            startDeviceScanButton.setVisibility(View.INVISIBLE);
+        } else {
+            menu.setVisibility(View.INVISIBLE);
+            startDeviceScanButton.setVisibility(View.VISIBLE);
+        }
     }
 
     private void createNotificationChannel() {

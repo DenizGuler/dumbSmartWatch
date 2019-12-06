@@ -17,6 +17,7 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 
 import java.util.Locale;
+import java.util.Queue;
 
 public class BleService extends Service {
 
@@ -25,15 +26,19 @@ public class BleService extends Service {
     private final String CHANNEL_ID = "290M";
     final int SERVICE_ID = 290;
 
+    public static boolean CONNECTED = false;
+
     BluetoothDevice device;
     BluetoothAdapter adapter;
     BluetoothGatt gatt;
+
+    private Queue<Runnable> commandQueue;
+    private boolean commandQueueBusy;
 
     Runnable discoverServicesRunnable;
     Handler bleHandler = new Handler();
 
     Notification notification;
-
 
     public BleService() {
         super();
@@ -66,18 +71,22 @@ public class BleService extends Service {
                             }
                         };
                         bleHandler.postDelayed(discoverServicesRunnable, delay);
+                        CONNECTED = true;
                     } else if (bondState == BluetoothDevice.BOND_BONDING) {
                         // Bonding process in progress, let it complete
                         Log.i(TAG, "waiting for bonding to complete");
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     gatt.close();
+                    stopSelf();
                 } else {
-                    // connecting or disconnecting, ignore
+                    // connecting or disconnecting, ignore for now
+                    Log.i(TAG, "device is either connecting or disconnecting; waiting");
                 }
             } else {
                 // error occurred
                 gatt.close();
+                stopSelf();
             }
         }
 
@@ -136,7 +145,12 @@ public class BleService extends Service {
     public void onDestroy() {
         //TODO: disconnect from device
         startId = 0;
-        gatt.disconnect();
+        if (CONNECTED) {
+            Log.i(TAG, "onDestroy: disconnecting gatt");
+            gatt.disconnect();
+            CONNECTED = false;
+        }
+        stopForeground(true);
         super.onDestroy();
     }
 }

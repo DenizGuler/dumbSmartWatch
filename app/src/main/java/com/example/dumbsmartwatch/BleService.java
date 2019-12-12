@@ -7,17 +7,31 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
+import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.telecom.GatewayInfo;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Queue;
+import java.util.UUID;
+
+import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
+import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_INDICATE;
+import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 
 public class BleService extends Service {
 
@@ -37,11 +51,14 @@ public class BleService extends Service {
     private boolean commandQueueBusy;
     private int nrTries;
     private boolean isRetrying;
+    private HashSet<UUID> notifyingCharacteristics = new HashSet<>();
 
     Runnable discoverServicesRunnable;
     Handler bleHandler = new Handler();
 
     Notification notification;
+
+    AudioManager audioManager;
 
     public BleService() {
         super();
@@ -51,7 +68,7 @@ public class BleService extends Service {
 
         @Override
         public void onConnectionStateChange(final BluetoothGatt gatt, int status, int newState) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
+            if (status == GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     int bondState = device.getBondState();
                     // Take action depending on the bond state
@@ -71,6 +88,7 @@ public class BleService extends Service {
                                 if (!result) {
                                     Log.e(TAG, "discoverServices failed to start");
                                 }
+//                                setNotify()
                                 discoverServicesRunnable = null;
                             }
                         };
@@ -104,6 +122,44 @@ public class BleService extends Service {
             }
             super.onServicesDiscovered(gatt, status);
         }
+
+        @Override
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicRead(gatt, characteristic, status);
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicWrite(gatt, characteristic, status);
+        }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, final BluetoothGattDescriptor descriptor, final int status) {
+            final BluetoothGattCharacteristic parentCharacteristics = descriptor.getCharacteristic();
+            if (status != GATT_SUCCESS) {
+                Log.e(TAG, "onDescriptorWrite: error");
+
+            }
+            if (descriptor.getUuid().equals(UUID.fromString(CCC_DESCRIPTOR_UUID))) {
+                if (status == GATT_SUCCESS) {
+                    byte[] value = descriptor.getValue();
+                    if (value != null) {
+                        if (value[0] != 0) {
+                            // notify is turned on
+                            notifyingCharacteristics.add(parentCharacteristics.getUuid());
+                        }
+                    } else {
+                        // notify was turned off
+                        notifyingCharacteristics.remove(parentCharacteristics.getUuid());
+                    }
+                }
+                // this was a setNotify op
+            } else {
+                // this was a normal descriptor write
+
+            }
+            completedCommand();
+        }
     };
 
     @Override
@@ -125,6 +181,7 @@ public class BleService extends Service {
 
         gatt = device.connectGatt(this, false, bluetoothGattCallback, BluetoothDevice.TRANSPORT_LE);
 
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
     }
 
@@ -150,12 +207,94 @@ public class BleService extends Service {
         //TODO: disconnect from device
         startId = 0;
         if (CONNECTED) {
+            BluetoothGattService service = gatt.getService(UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b"));
+
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8"));
+
+            writeCharacteristic(characteristic, "disconnecting");
+
             Log.i(TAG, "onDestroy: disconnecting gatt");
             gatt.disconnect();
+            gatt.close();
+            gatt = null;
             CONNECTED = false;
         }
         stopForeground(true);
         super.onDestroy();
+    }
+
+    public boolean readCharacteristic(final BluetoothGattCharacteristic characteristic) {
+        if (gatt == null) {
+            Log.e(TAG, "ERROR: Gatt is 'null', ignoring read request");
+            return false;
+        }
+
+        // Check if characteristic is valid
+        if (characteristic == null) {
+            Log.e(TAG, "ERROR: Characteristic is 'null', ignoring read request");
+            return false;
+        }
+
+        // Check if this characteristic actually has READ property
+        if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_READ) == 0) {
+            Log.e(TAG, "ERROR: Characteristic cannot be read");
+            return false;
+        }
+
+        // Enqueue the read command now that all checks have been passed
+        boolean result = commandQueue.add(new Runnable() {
+            @Override
+            public void run() {
+                if (!gatt.readCharacteristic(characteristic)) {
+                    Log.e(TAG, String.format("ERROR: readCharacteristic failed for characteristic: %s", characteristic.getUuid()));
+                    completedCommand();
+                } else {
+                    Log.d(TAG, String.format("reading characteristic <%s>", characteristic.getUuid()));
+                    nrTries++;
+                }
+            }
+        });
+
+        if (result) {
+            nextCommand();
+        } else {
+            Log.e(TAG, "ERROR: Could not enqueue read characteristic command");
+        }
+        return result;
+    }
+
+    public boolean writeCharacteristic(final BluetoothGattCharacteristic characteristic, String data) {
+        if (adapter == null || gatt == null) {
+            Log.w(TAG, "writeCharacteristic: adapter not init");
+            return false;
+        }
+
+        Log.i(TAG, "writeCharacteristic: characteristic: " + characteristic.toString());
+        try {
+            Log.i(TAG, "writeCharacteristic: data: " + URLEncoder.encode(data, "utf-8"));
+            characteristic.setValue(URLEncoder.encode(data, "utf-8"));
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+        boolean result = commandQueue.add(new Runnable() {
+            @Override
+            public void run() {
+                if (!gatt.writeCharacteristic(characteristic)) {
+                    Log.e(TAG, "Write characteristic failed");
+                    completedCommand();
+                } else {
+                    Log.d(TAG, "Writing characteristic to device");
+                    nrTries++;
+                }
+            }
+        });
+
+        if (result) {
+            nextCommand();
+        } else {
+            Log.e(TAG, "writeCharacteristic: ERROR: could not enqueue write characteristic command");
+        }
+        return result;
     }
 
     private void nextCommand() {
@@ -171,7 +310,7 @@ public class BleService extends Service {
             return;
         }
 
-        if (commandQueue.size() > 0 ) {
+        if (commandQueue.size() > 0) {
             final Runnable bleCommand = commandQueue.peek();
             commandQueueBusy = true;
             nrTries = 0;
@@ -208,5 +347,62 @@ public class BleService extends Service {
             }
         }
         nextCommand();
+    }
+
+    private final String CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805f9b34fb";
+
+    public boolean setNotify(BluetoothGattCharacteristic characteristic, final boolean enable) {
+        // Check if characteristic is valid
+        if (characteristic == null) {
+            Log.e(TAG, "ERROR: Characteristic is 'null', ignoring setNotify request");
+            return false;
+        }
+
+        // Get the CCC Descriptor for the characteristic
+        final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(UUID.fromString(CCC_DESCRIPTOR_UUID));
+        if (descriptor == null) {
+            Log.e(TAG, String.format("ERROR: Could not get CCC descriptor for characteristic %s", characteristic.getUuid()));
+            return false;
+        }
+
+        // Check if characteristic has NOTIFY or INDICATE properties and set the correct byte value to be written
+        byte[] value;
+        int properties = characteristic.getProperties();
+        if ((properties & PROPERTY_NOTIFY) > 0) {
+            value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
+        } else if ((properties & PROPERTY_INDICATE) > 0) {
+            value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE;
+        } else {
+            Log.e(TAG, String.format("ERROR: Characteristic %s does not have notify or indicate property", characteristic.getUuid()));
+            return false;
+        }
+        final byte[] finalValue = enable ? value : BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
+
+        // Queue Runnable to turn on/off the notification now that all checks have been passed
+        boolean result = commandQueue.add(new Runnable() {
+            @Override
+            public void run() {
+                // First set notification for Gatt object
+                if (!gatt.setCharacteristicNotification(descriptor.getCharacteristic(), enable)) {
+                    Log.e(TAG, String.format("ERROR: setCharacteristicNotification failed for descriptor: %s", descriptor.getUuid()));
+                }
+                // Then write to descriptor
+                descriptor.setValue(finalValue);
+                boolean result = gatt.writeDescriptor(descriptor);
+                if (!result) {
+                    Log.e(TAG, String.format("ERROR: writeDescriptor failed for descriptor: %s", descriptor.getUuid()));
+                    completedCommand();
+                } else {
+                    nrTries++;
+                }
+            }
+        });
+
+        if (result) {
+            nextCommand();
+        } else {
+            Log.e(TAG, "ERROR: Could not enqueue write command");
+        }
+        return result;
     }
 }

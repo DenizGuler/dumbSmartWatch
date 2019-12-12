@@ -49,6 +49,7 @@ public class DeviceScanActivity extends AppCompatActivity {
     private static final int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_FINE_LOCATION = 1;
     private static final int PERMISSION_REQUEST_FOREGROUND_SERVICE = 1;
+    private static boolean isScanning = false;
 
     private ScanCallback scanCallback = new ScanCallback() {
         @Override
@@ -100,6 +101,11 @@ public class DeviceScanActivity extends AppCompatActivity {
     }
 
     private void scanForWatch() {
+        // stop scanning if currently scanning
+        if (isScanning) {
+            stopScan();
+        }
+        isScanning = true;
         // clean up last scan results
         foundMacAddresses = new HashSet<>();
         LinearLayout layout = findViewById(R.id.button_container);
@@ -143,6 +149,7 @@ public class DeviceScanActivity extends AppCompatActivity {
         scanner.stopScan(scanCallback);
         startScanButton.setText("Scan");
         textView.setText("Done Scanning");
+        isScanning = false;
     }
 
     private void createDevBtn(String name, final BluetoothDevice foundDev) {

@@ -114,7 +114,7 @@ public class DeviceScanActivity extends AppCompatActivity {
         // set up scan
         ScanFilter.Builder builderSF = new ScanFilter.Builder();
         ScanSettings.Builder builderSS = new ScanSettings.Builder();
-        builderSF.setDeviceName("DumbWatch");
+//        builderSF.setDeviceName("DumbWatch");
         builderSS.setScanMode(ScanSettings.SCAN_MODE_BALANCED)
                 .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                 .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)

@@ -24,7 +24,10 @@ import androidx.core.app.NotificationCompat;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 import java.util.UUID;
@@ -34,6 +37,12 @@ import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_INDICATE;
 import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 
 public class BleService extends Service {
+
+    private final static String SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+//    private final static String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    private final static String CHARA_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+//    private final static String CHARA_UUID_RX = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    private final static String CHARA_UUID_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
     private final static String TAG = "BleService";
     private static final int MAX_TRIES = 5;
@@ -59,6 +68,7 @@ public class BleService extends Service {
     Notification notification;
 
     AudioManager audioManager;
+
 
     public BleService() {
         super();
@@ -100,6 +110,7 @@ public class BleService extends Service {
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     gatt.close();
+                    CONNECTED = false;
                     stopSelf();
                 } else {
                     // connecting or disconnecting, ignore for now
@@ -108,6 +119,7 @@ public class BleService extends Service {
             } else {
                 // error occurred
                 gatt.close();
+                CONNECTED = false;
                 stopSelf();
             }
         }
@@ -120,12 +132,42 @@ public class BleService extends Service {
                 gatt.disconnect();
                 return;
             }
+
+            List<BluetoothGattService> services = gatt.getServices();
+            ArrayList<UUID> serviceUuids = new ArrayList<>();
+
+            for(BluetoothGattService s : services) {
+                serviceUuids.add(s.getUuid());
+            }
+
+            Log.i(TAG, "onConnectionStateChange: Discovered Services:" + serviceUuids);
+            BluetoothGattService service;
+            BluetoothGattCharacteristic characteristic;
+            if ((service = gatt.getService(UUID.fromString(SERVICE_UUID))) != null) {
+
+                List<BluetoothGattCharacteristic> chars = service.getCharacteristics();
+                ArrayList<UUID> charUuids = new ArrayList<>();
+                for(BluetoothGattCharacteristic c : chars) {
+                    charUuids.add(c.getUuid());
+                }
+                Log.i(TAG, "onServicesDiscovered: Discovered Characteristics: " + charUuids);
+                if ((characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_TX))) != null) {
+                    setNotify(characteristic, true);
+                }
+            } else {
+                Log.e(TAG, "onServicesDiscovered: ERROR SERVICE NOT FOUND");
+            }
             super.onServicesDiscovered(gatt, status);
         }
 
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicRead(gatt, characteristic, status);
+            if (status != GATT_SUCCESS) {
+                Log.e(TAG, String.format(Locale.ENGLISH,"ERROR: Read failed for characteristic: %s, status %d", characteristic.getUuid(), status));
+                completedCommand();
+                return;
+            }
+            completedCommand();
         }
 
         @Override
@@ -138,7 +180,6 @@ public class BleService extends Service {
             final BluetoothGattCharacteristic parentCharacteristics = descriptor.getCharacteristic();
             if (status != GATT_SUCCESS) {
                 Log.e(TAG, "onDescriptorWrite: error");
-
             }
             if (descriptor.getUuid().equals(UUID.fromString(CCC_DESCRIPTOR_UUID))) {
                 if (status == GATT_SUCCESS) {
@@ -160,6 +201,29 @@ public class BleService extends Service {
             }
             completedCommand();
         }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            StringBuilder value = new StringBuilder();
+            for (int i = 0; i < characteristic.getValue().length; ++i) {
+                value.append(characteristic.getValue()[i]);
+            }
+
+            Log.i(TAG, "read value: " + value);
+            switch (value.toString()) {
+                case "play":
+
+                    break;
+                case "pause":
+                    break;
+                case "fastforward":
+                    break;
+                case "stop":
+                    break;
+                default:
+                    break;
+            }
+        }
     };
 
     @Override
@@ -168,6 +232,7 @@ public class BleService extends Service {
         super.onCreate();
         Intent notificationIntent = new Intent(this, BleService.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+        commandQueue = new LinkedList<>();
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_name)
@@ -207,11 +272,9 @@ public class BleService extends Service {
         //TODO: disconnect from device
         startId = 0;
         if (CONNECTED) {
-            BluetoothGattService service = gatt.getService(UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b"));
-
-            BluetoothGattCharacteristic characteristic = service.getCharacteristic(UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8"));
-
-            writeCharacteristic(characteristic, "disconnecting");
+//            BluetoothGattService service = gatt.getService(UUID.fromString(SERVICE_UUID));
+//            BluetoothGattCharacteristic characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_RX));
+//            writeCharacteristic(characteristic, "disconnecting");
 
             Log.i(TAG, "onDestroy: disconnecting gatt");
             gatt.disconnect();
@@ -276,6 +339,9 @@ public class BleService extends Service {
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
+
+        Log.d(TAG, "writeCharacteristic: " + characteristic.getUuid());
+
         boolean result = commandQueue.add(new Runnable() {
             @Override
             public void run() {

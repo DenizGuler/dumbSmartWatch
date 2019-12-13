@@ -17,14 +17,17 @@ import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.telecom.GatewayInfo;
 import android.util.Log;
+import android.view.KeyEvent;
 
 import androidx.core.app.NotificationCompat;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -39,9 +42,7 @@ import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 public class BleService extends Service {
 
     private final static String SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-//    private final static String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     private final static String CHARA_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-//    private final static String CHARA_UUID_RX = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
     private final static String CHARA_UUID_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
     private final static String TAG = "BleService";
@@ -204,21 +205,26 @@ public class BleService extends Service {
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            StringBuilder value = new StringBuilder();
-            for (int i = 0; i < characteristic.getValue().length; ++i) {
-                value.append(characteristic.getValue()[i]);
-            }
-
+            byte value = characteristic.getValue()[0];
+//            String value = Base64.getEncoder().encodeToString(characteristic.getValue());
             Log.i(TAG, "read value: " + value);
-            switch (value.toString()) {
-                case "play":
+            KeyEvent downEvent;
+            KeyEvent upEvent;
+            switch (value) {
+                case 0:
+                    downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                    audioManager.dispatchMediaKeyEvent(downEvent);
 
+                    upEvent = new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                    audioManager.dispatchMediaKeyEvent(upEvent);
                     break;
-                case "pause":
+                case 1:
+                    downEvent = new KeyEvent(KeyEvent.ACTION_DOWN,   KeyEvent.KEYCODE_MEDIA_NEXT);
+                    audioManager.dispatchMediaKeyEvent(downEvent);
                     break;
-                case "fastforward":
-                    break;
-                case "stop":
+                case 2:
+                    downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                    audioManager.dispatchMediaKeyEvent(downEvent);
                     break;
                 default:
                     break;
@@ -272,10 +278,6 @@ public class BleService extends Service {
         //TODO: disconnect from device
         startId = 0;
         if (CONNECTED) {
-//            BluetoothGattService service = gatt.getService(UUID.fromString(SERVICE_UUID));
-//            BluetoothGattCharacteristic characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_RX));
-//            writeCharacteristic(characteristic, "disconnecting");
-
             Log.i(TAG, "onDestroy: disconnecting gatt");
             gatt.disconnect();
             gatt.close();

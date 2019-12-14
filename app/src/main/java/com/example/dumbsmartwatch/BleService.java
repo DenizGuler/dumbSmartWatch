@@ -17,8 +17,6 @@ import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.SystemClock;
-import android.telecom.GatewayInfo;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -69,7 +67,9 @@ public class BleService extends Service {
     Notification notification;
 
     AudioManager audioManager;
-
+    private final static byte PAUSE_PLAY = 1;
+    private final static byte NEXT_TRACK = 2;
+    private final static byte PREV_TRACK = 0;
 
     public BleService() {
         super();
@@ -211,18 +211,18 @@ public class BleService extends Service {
             KeyEvent downEvent;
             KeyEvent upEvent;
             switch (value) {
-                case 0:
+                case PAUSE_PLAY:
                     downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
                     audioManager.dispatchMediaKeyEvent(downEvent);
 
                     upEvent = new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
                     audioManager.dispatchMediaKeyEvent(upEvent);
                     break;
-                case 1:
+                case NEXT_TRACK:
                     downEvent = new KeyEvent(KeyEvent.ACTION_DOWN,   KeyEvent.KEYCODE_MEDIA_NEXT);
                     audioManager.dispatchMediaKeyEvent(downEvent);
                     break;
-                case 2:
+                case PREV_TRACK:
                     downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
                     audioManager.dispatchMediaKeyEvent(downEvent);
                     break;

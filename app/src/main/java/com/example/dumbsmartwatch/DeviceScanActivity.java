@@ -97,6 +97,7 @@ public class DeviceScanActivity extends AppCompatActivity {
             this.requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_FINE_LOCATION);
         }
 
+
         checkForegroundPerm();
     }
 

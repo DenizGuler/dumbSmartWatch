@@ -1,5 +1,6 @@
 package com.example.dumbsmartwatch;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -13,6 +14,9 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
@@ -22,7 +26,12 @@ import android.view.KeyEvent;
 
 import androidx.core.app.NotificationCompat;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -38,6 +47,9 @@ import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_INDICATE;
 import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 
 public class BleService extends Service {
+
+    private final static String OWM_KEY = "05d76d752ee05ec911af166f05651c97";
+    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/forecast?";
 
     private final static String SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
     private final static String CHARA_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -70,6 +82,9 @@ public class BleService extends Service {
     private final static byte PAUSE_PLAY = 1;
     private final static byte NEXT_TRACK = 2;
     private final static byte PREV_TRACK = 0;
+
+    private double lat;
+    private double lon;
 
     public BleService() {
         super();
@@ -137,7 +152,7 @@ public class BleService extends Service {
             List<BluetoothGattService> services = gatt.getServices();
             ArrayList<UUID> serviceUuids = new ArrayList<>();
 
-            for(BluetoothGattService s : services) {
+            for (BluetoothGattService s : services) {
                 serviceUuids.add(s.getUuid());
             }
 
@@ -148,12 +163,17 @@ public class BleService extends Service {
 
                 List<BluetoothGattCharacteristic> chars = service.getCharacteristics();
                 ArrayList<UUID> charUuids = new ArrayList<>();
-                for(BluetoothGattCharacteristic c : chars) {
+                for (BluetoothGattCharacteristic c : chars) {
                     charUuids.add(c.getUuid());
                 }
                 Log.i(TAG, "onServicesDiscovered: Discovered Characteristics: " + charUuids);
                 if ((characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_TX))) != null) {
                     setNotify(characteristic, true);
+                }
+                if ((characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_RX))) != null) {
+                    String weatherJSON = getOWMJSON(lat, lon);
+//                    Log.d(TAG, "onServicesDiscovered: " + weatherJSON);
+                    writeCharacteristic(characteristic, weatherJSON);
                 }
             } else {
                 Log.e(TAG, "onServicesDiscovered: ERROR SERVICE NOT FOUND");
@@ -164,7 +184,7 @@ public class BleService extends Service {
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             if (status != GATT_SUCCESS) {
-                Log.e(TAG, String.format(Locale.ENGLISH,"ERROR: Read failed for characteristic: %s, status %d", characteristic.getUuid(), status));
+                Log.e(TAG, String.format(Locale.ENGLISH, "ERROR: Read failed for characteristic: %s, status %d", characteristic.getUuid(), status));
                 completedCommand();
                 return;
             }
@@ -219,7 +239,7 @@ public class BleService extends Service {
                     audioManager.dispatchMediaKeyEvent(upEvent);
                     break;
                 case NEXT_TRACK:
-                    downEvent = new KeyEvent(KeyEvent.ACTION_DOWN,   KeyEvent.KEYCODE_MEDIA_NEXT);
+                    downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT);
                     audioManager.dispatchMediaKeyEvent(downEvent);
                     break;
                 case PREV_TRACK:
@@ -254,6 +274,20 @@ public class BleService extends Service {
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        Location loc = null;
+        if (locationManager != null) {
+            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        }
+        if (loc == null) {
+            Log.e(TAG, "location is null");
+            return;
+        }
+        lat = loc.getLatitude();
+        lon = loc.getLongitude();
     }
 
     @Override
@@ -472,5 +506,38 @@ public class BleService extends Service {
             Log.e(TAG, "ERROR: Could not enqueue write command");
         }
         return result;
+    }
+
+    public String getOWMJSON (double lat, double lon) {
+        HttpURLConnection con = null;
+        InputStream stream = null;
+        try {
+            con = (HttpURLConnection) (new URL(OWM_EPT + "lat=" + lat + "&lon=" + lon + "&APPID=" + OWM_KEY)).openConnection();
+            con.setRequestMethod("GET");
+            con.setDoInput(true);
+            con.setDoOutput(true);
+            con.connect();
+
+            StringBuilder buff = new StringBuilder();
+            stream = con.getInputStream();
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
+            String line;
+            while((line = bufferedReader.readLine()) != null) {
+                buff.append(line).append("rn");
+            }
+            stream.close();
+            con.disconnect();
+            return buff.toString();
+        } catch (Throwable t) {
+            Log.e(TAG, "getOWMJSON: ", t);
+        } finally {
+            try {
+                stream.close();
+            } catch (Throwable t) { }
+            try {
+                con.disconnect();
+            } catch (Throwable t) { }
+        }
+        return null;
     }
 }

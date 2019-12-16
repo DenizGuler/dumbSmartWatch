@@ -33,6 +33,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -49,7 +50,7 @@ import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 public class BleService extends Service {
 
     private final static String OWM_KEY = "05d76d752ee05ec911af166f05651c97";
-    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/forecast?";
+    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/weather?units=imperial";
 
     private final static String SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
     private final static String CHARA_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -371,7 +372,8 @@ public class BleService extends Service {
         Log.i(TAG, "writeCharacteristic: characteristic: " + characteristic.toString());
         try {
             Log.i(TAG, "writeCharacteristic: data: " + URLEncoder.encode(data, "utf-8"));
-            characteristic.setValue(URLEncoder.encode(data, "utf-8"));
+            byte[] value = data.getBytes(StandardCharsets.UTF_8);
+            characteristic.setValue(value);
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
@@ -512,7 +514,7 @@ public class BleService extends Service {
         HttpURLConnection con = null;
         InputStream stream = null;
         try {
-            con = (HttpURLConnection) (new URL(OWM_EPT + "lat=" + lat + "&lon=" + lon + "&APPID=" + OWM_KEY)).openConnection();
+            con = (HttpURLConnection) (new URL(OWM_EPT + "&lat=" + lat + "&lon=" + lon + "&APPID=" + OWM_KEY)).openConnection();
             con.setRequestMethod("GET");
             con.setDoInput(true);
             con.setDoOutput(true);

@@ -1,6 +1,7 @@
 package com.example.dumbsmartwatch;
 
 import android.Manifest;
+import android.app.ExpandableListActivity;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -18,6 +19,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
 import android.media.AudioManager;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -49,8 +51,6 @@ import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 
 public class BleService extends Service {
 
-    private final static String OWM_KEY = "05d76d752ee05ec911af166f05651c97";
-    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/weather?units=imperial";
 
     private final static String SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
     private final static String CHARA_UUID_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -194,7 +194,12 @@ public class BleService extends Service {
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicWrite(gatt, characteristic, status);
+            if (status != GATT_SUCCESS) {
+                Log.e(TAG, "ERROR: Write failed for characteristic: " + characteristic.getUuid() + ", status: " + status);
+                completedCommand();
+                return;
+            }
+            completedCommand();
         }
 
         @Override
@@ -227,7 +232,6 @@ public class BleService extends Service {
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             byte value = characteristic.getValue()[0];
-//            String value = Base64.getEncoder().encodeToString(characteristic.getValue());
             Log.i(TAG, "read value: " + value);
             KeyEvent downEvent;
             KeyEvent upEvent;
@@ -289,6 +293,8 @@ public class BleService extends Service {
         }
         lat = loc.getLatitude();
         lon = loc.getLongitude();
+
+        MainActivity.bleService = this;
     }
 
     @Override
@@ -321,6 +327,10 @@ public class BleService extends Service {
         }
         stopForeground(true);
         super.onDestroy();
+    }
+
+    public BluetoothGatt getGatt() {
+        return gatt;
     }
 
     public boolean readCharacteristic(final BluetoothGattCharacteristic characteristic) {
@@ -368,16 +378,10 @@ public class BleService extends Service {
             Log.w(TAG, "writeCharacteristic: adapter not init");
             return false;
         }
-
-        Log.i(TAG, "writeCharacteristic: characteristic: " + characteristic.toString());
-        try {
-            Log.i(TAG, "writeCharacteristic: data: " + URLEncoder.encode(data, "utf-8"));
-            byte[] value = data.getBytes(StandardCharsets.UTF_8);
-            characteristic.setValue(value);
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }
-
+        byte[] value = data.getBytes(StandardCharsets.UTF_8);
+        Log.i(TAG, "writeCharacteristic: data: " + new String(value, StandardCharsets.UTF_8));
+        characteristic.setValue(value);
+        
         Log.d(TAG, "writeCharacteristic: " + characteristic.getUuid());
 
         boolean result = commandQueue.add(new Runnable() {
@@ -404,6 +408,7 @@ public class BleService extends Service {
     private void nextCommand() {
         // make sure the queue is not busy
         if (commandQueueBusy) {
+            Log.i(TAG, "nextCommand: busy" + commandQueue);
             return;
         }
 
@@ -510,11 +515,49 @@ public class BleService extends Service {
         return result;
     }
 
-    public String getOWMJSON (double lat, double lon) {
+    public String getOWMJSON(double lat, double lon) {
+        try {
+            return new OWMJSONLatLonTask().execute(lat, lon).get();
+        } catch (Exception e) {
+            Log.e(TAG, "getOWMJSON: ", e);
+        }
+        return null;
+    }
+
+    public String getOWMJSON(String city) {
+        try {
+            return new OWMJSONCityTask().execute(city).get();
+        } catch (Exception e) {
+            Log.e(TAG, "getOWMJSON: ", e);
+        }
+        return null;
+    }
+
+    public void updateWeather(String city) {
+        BluetoothGattService service;
+        BluetoothGattCharacteristic characteristic;
+        if ((service = gatt.getService(UUID.fromString(SERVICE_UUID))) == null) return;
+        else if ((characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_RX))) == null)
+            return;
+        String JSON;
+        Log.d(TAG, "updateWeather: " + city);
+        if (city.isEmpty()) JSON = getOWMJSON(lat, lon);
+        else JSON = getOWMJSON(city);
+        writeCharacteristic(characteristic, JSON);
+    }
+}
+
+class OWMJSONLatLonTask extends AsyncTask<Double, Void, String> {
+    private final static String OWM_KEY = "05d76d752ee05ec911af166f05651c97";
+    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/weather?units=imperial";
+    private final static String TAG = "OWMAPI";
+
+    @Override
+    protected String doInBackground(Double... coords) {
         HttpURLConnection con = null;
         InputStream stream = null;
         try {
-            con = (HttpURLConnection) (new URL(OWM_EPT + "&lat=" + lat + "&lon=" + lon + "&APPID=" + OWM_KEY)).openConnection();
+            con = (HttpURLConnection) (new URL(OWM_EPT + "&lat=" + coords[0] + "&lon=" + coords[1] + "&APPID=" + OWM_KEY)).openConnection();
             con.setRequestMethod("GET");
             con.setDoInput(true);
             con.setDoOutput(true);
@@ -524,7 +567,7 @@ public class BleService extends Service {
             stream = con.getInputStream();
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
             String line;
-            while((line = bufferedReader.readLine()) != null) {
+            while ((line = bufferedReader.readLine()) != null) {
                 buff.append(line).append("rn");
             }
             stream.close();
@@ -535,10 +578,55 @@ public class BleService extends Service {
         } finally {
             try {
                 stream.close();
-            } catch (Throwable t) { }
+            } catch (Throwable t) {
+            }
             try {
                 con.disconnect();
-            } catch (Throwable t) { }
+            } catch (Throwable t) {
+            }
+        }
+        return null;
+    }
+}
+
+class OWMJSONCityTask extends AsyncTask<String, Void, String> {
+    private final static String OWM_KEY = "05d76d752ee05ec911af166f05651c97";
+    private final static String OWM_EPT = "http://api.openweathermap.org/data/2.5/weather?units=imperial";
+    private final static String TAG = "OWMAPI";
+
+    @Override
+    protected String doInBackground(String... city) {
+        HttpURLConnection con = null;
+        InputStream stream = null;
+        try {
+            Log.d(TAG, "getOWMJSON: " + OWM_EPT + "&q=" + city[0] + "&APPID=" + OWM_KEY);
+            con = (HttpURLConnection) (new URL(OWM_EPT + "&q=" + city[0] + "&APPID=" + OWM_KEY)).openConnection();
+            con.setRequestMethod("GET");
+            con.setDoInput(true);
+            con.setDoOutput(true);
+            con.connect();
+
+            StringBuilder buff = new StringBuilder();
+            stream = con.getInputStream();
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
+            String line;
+            while ((line = bufferedReader.readLine()) != null) {
+                buff.append(line).append("rn");
+            }
+            stream.close();
+            con.disconnect();
+            return buff.toString();
+        } catch (Throwable t) {
+            Log.e(TAG, "getOWMJSON: ", t);
+        } finally {
+            try {
+                stream.close();
+            } catch (Throwable t) {
+            }
+            try {
+                con.disconnect();
+            } catch (Throwable t) {
+            }
         }
         return null;
     }

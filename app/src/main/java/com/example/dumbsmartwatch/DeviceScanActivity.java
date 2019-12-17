@@ -56,7 +56,7 @@ public class DeviceScanActivity extends AppCompatActivity {
         public void onScanResult(int callbackType, ScanResult result) {
             textView.setText("Scanning for watch...");
             final BluetoothDevice foundDev = result.getDevice();
-            if(foundMacAddresses.add(foundDev.getAddress())) {
+            if(foundMacAddresses.add(foundDev.getAddress()) && foundDev.getName() != null && foundDev.getName().contains("DumbWatch")) {
                 createDevBtn("" + foundDev.getName() + ", MAC ADDRESS: " + foundDev.getAddress(), foundDev);
             }
         }

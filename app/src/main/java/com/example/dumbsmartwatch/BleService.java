@@ -1,7 +1,6 @@
 package com.example.dumbsmartwatch;
 
 import android.Manifest;
-import android.app.ExpandableListActivity;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -32,13 +31,10 @@ import androidx.core.app.NotificationCompat;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -175,7 +171,6 @@ public class BleService extends Service {
                 }
                 if ((characteristic = service.getCharacteristic(UUID.fromString(CHARA_UUID_RX))) != null) {
                     String weatherJSON = getOWMJSON(lat, lon);
-//                    Log.d(TAG, "onServicesDiscovered: " + weatherJSON);
                     writeCharacteristic(characteristic, weatherJSON);
                 }
             } else {
@@ -226,7 +221,6 @@ public class BleService extends Service {
                 // this was a setNotify op
             } else {
                 // this was a normal descriptor write
-
             }
             completedCommand();
         }

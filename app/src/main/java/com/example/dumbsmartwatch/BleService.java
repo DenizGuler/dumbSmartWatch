@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 
@@ -83,6 +84,8 @@ public class BleService extends Service {
     private final static byte PAUSE_PLAY = 1;
     private final static byte NEXT_TRACK = 2;
     private final static byte PREV_TRACK = 0;
+    private final static byte VOL_UP = 3;
+    private final static byte VOL_DN = 4;
 
     private double lat;
     private double lon;
@@ -115,7 +118,6 @@ public class BleService extends Service {
                                 if (!result) {
                                     Log.e(TAG, "discoverServices failed to start");
                                 }
-//                                setNotify()
                                 discoverServicesRunnable = null;
                             }
                         };
@@ -251,6 +253,12 @@ public class BleService extends Service {
                     downEvent = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
                     audioManager.dispatchMediaKeyEvent(downEvent);
                     break;
+                case VOL_UP:
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+                    break;
+                case VOL_DN:
+                    audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+                    break;
                 default:
                     break;
             }
@@ -325,6 +333,7 @@ public class BleService extends Service {
             gatt = null;
             CONNECTED = false;
         }
+        commandQueue.clear();
         stopForeground(true);
         super.onDestroy();
     }
@@ -379,7 +388,7 @@ public class BleService extends Service {
             return false;
         }
         byte[] value = data.getBytes(StandardCharsets.UTF_8);
-        Log.i(TAG, "writeCharacteristic: data: " + new String(value, StandardCharsets.UTF_8));
+        Log.i(TAG, "writeCharacteristic: size:" + value.length + "data: " + new String(value, StandardCharsets.UTF_8));
         characteristic.setValue(value);
         
         Log.d(TAG, "writeCharacteristic: " + characteristic.getUuid());
@@ -543,6 +552,10 @@ public class BleService extends Service {
         Log.d(TAG, "updateWeather: " + city);
         if (city.isEmpty()) JSON = getOWMJSON(lat, lon);
         else JSON = getOWMJSON(city);
+        if (JSON == null) {
+            Toast.makeText(this, "Location not found!", Toast.LENGTH_SHORT).show();
+            return;
+        }
         writeCharacteristic(characteristic, JSON);
     }
 }
